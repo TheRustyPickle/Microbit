@@ -8,35 +8,79 @@ use microbit::hal::timer;
 use panic_rtt_target as _;
 use rtt_target::rtt_init_print;
 
-const LEFT_ARROW: [(usize, usize); 9] = [
-    (0, 2),
-    (1, 1),
-    (2, 0),
-    (3, 1),
-    (4, 2),
-    (2, 1),
-    (2, 2),
-    (2, 3),
-    (2, 4),
+const LEFT_ARROW: [[u8; 5]; 5] = [
+    [0, 0, 1, 0, 0],
+    [0, 1, 0, 0, 0],
+    [1, 1, 1, 1, 1],
+    [0, 1, 0, 0, 0],
+    [0, 0, 1, 0, 0],
 ];
 
-const RIGHT_ARROW: [(usize, usize); 9] = [
-    (0, 2),
-    (1, 3),
-    (2, 4),
-    (3, 3),
-    (4, 2),
-    (2, 1),
-    (2, 2),
-    (2, 3),
-    (2, 0),
+const RIGHT_ARROW: [[u8; 5]; 5] = [
+    [0, 0, 1, 0, 0],
+    [0, 0, 0, 1, 0],
+    [1, 1, 1, 1, 1],
+    [0, 0, 0, 1, 0],
+    [0, 0, 1, 0, 0],
 ];
 
-const MID_LED: (usize, usize) = (2, 2);
+const MID_LED: [[u8; 5]; 5] = [
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 1, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+];
+
+const BLINK: [[u8; 5]; 5] = [
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
+];
+
+const TICK: u16 = 25;
+const BLINK_TICK: u16 = 50;
+
+#[derive(Clone, Copy)]
+enum LightState {
+    Middle,
+    Left(Light),
+    Right(Light),
+}
+
+#[derive(Clone, Copy)]
+enum Light {
+    Lit(u16),
+    Blinking(u16),
+}
+
+impl Light {
+    fn tick(&mut self) {
+        match self {
+            Light::Lit(tick) => {
+                if *tick == 0 {
+                    *self = Light::Blinking(BLINK_TICK);
+                } else {
+                    *tick -= 1;
+                }
+            }
+            Light::Blinking(tick) => {
+                if *tick == 0 {
+                    *self = Light::Lit(TICK);
+                } else {
+                    *tick -= 1;
+                }
+            }
+        }
+    }
+}
 
 #[entry]
 fn main() -> ! {
     rtt_init_print!();
+
     let board = microbit::Board::take().unwrap();
     let mut timer = timer::Timer::new(board.TIMER0);
     let mut display = Display::new(board.display_pins);
@@ -44,39 +88,57 @@ fn main() -> ! {
     let mut button_a = board.buttons.button_a;
     let mut button_b = board.buttons.button_b;
 
-    let mut leds = [
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-    ];
-
-    let clean_led = leds;
+    let mut light_state = LightState::Middle;
 
     loop {
         let left_pressed = button_a.is_low().unwrap();
         let right_pressed = button_b.is_low().unwrap();
 
+        match light_state {
+            LightState::Middle => {
+                display.show(&mut timer, MID_LED, 10);
+            }
+
+            LightState::Left(ref mut state) => {
+                state.tick();
+                match state {
+                    Light::Lit(_) => {
+                        display.show(&mut timer, LEFT_ARROW, 10);
+                    }
+                    Light::Blinking(_) => {
+                        display.show(&mut timer, BLINK, 10);
+                    }
+                }
+            }
+
+            LightState::Right(ref mut state) => {
+                state.tick();
+                match state {
+                    Light::Lit(_) => {
+                        display.show(&mut timer, RIGHT_ARROW, 10);
+                    }
+                    Light::Blinking(_) => {
+                        display.show(&mut timer, BLINK, 10);
+                    }
+                }
+            }
+        }
+
         match (left_pressed, right_pressed) {
-            (true, false) => {
-                leds = clean_led;
-                for (x, y) in LEFT_ARROW.iter() {
-                    leds[*x][*y] = 1;
+            (true, false) => match light_state {
+                LightState::Left(_) => {}
+                _ => {
+                    light_state = LightState::Left(Light::Lit(TICK));
                 }
-                display.show(&mut timer, leds, 10);
-            }
-            (false, true) => {
-                leds = clean_led;
-                for (x, y) in RIGHT_ARROW.iter() {
-                    leds[*x][*y] = 1;
+            },
+            (false, true) => match light_state {
+                LightState::Right(_) => {}
+                _ => {
+                    light_state = LightState::Right(Light::Lit(TICK));
                 }
-                display.show(&mut timer, leds, 10);
-            }
+            },
             (false, false) | (true, true) => {
-                leds = clean_led;
-                leds[MID_LED.0][MID_LED.1] = 1;
-                display.show(&mut timer, leds, 10);
+                light_state = LightState::Middle;
             }
         }
     }
