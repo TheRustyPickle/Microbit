@@ -1,5 +1,5 @@
 [workspace]
-members = ["arrow", "roulette"]
+members = ["arrow", "roulette", "serial-setup", "string-serial"]
 
 resolver = "2"
 
@@ -14,3 +14,4 @@ microbit-v2 = "0.16.0"
 nrf52833-hal = "0.19.0"
 panic-rtt-target = "0.2.0"
 rtt-target = "0.6.2"
+serial-setup = { path = "serial-setup" }

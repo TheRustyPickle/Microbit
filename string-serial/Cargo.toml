@@ -1,0 +1,12 @@
+[package]
+name = "string-serial"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cortex-m.workspace = true
+cortex-m-rt.workspace = true
+microbit-v2.workspace = true
+panic-rtt-target.workspace = true
+rtt-target.workspace = true
+serial-setup.workspace = true
