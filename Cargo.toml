@@ -1,5 +1,5 @@
 [workspace]
-members = ["arrow", "roulette", "serial-setup", "string-serial", "urt-i2c"]
+members = ["arrow", "roulette", "serial-setup", "siren", "string-serial", "urt-i2c"]
 
 resolver = "2"
 
