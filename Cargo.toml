@@ -1,5 +1,13 @@
 [workspace]
-members = ["arrow", "roulette", "serial-setup", "siren", "string-serial", "urt-i2c"]
+members = [
+  "arrow",
+  "roulette",
+  "serial-setup",
+  "siren",
+  "snake",
+  "string-serial",
+  "urt-i2c",
+]
 
 resolver = "2"
 
@@ -9,6 +17,8 @@ cortex-m = { version = "0.7.7", features = [
   "inline-asm",
 ] }
 cortex-m-rt = "0.7.5"
+critical-section = "1"
+critical-section-lock-mut = "0.1"
 embedded-hal = "1.0.0"
 microbit-v2 = "0.16.0"
 nrf52833-hal = "0.19.0"

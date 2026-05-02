@@ -1,5 +1,5 @@
 [package]
-name = "siren"
+name = "snake"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,7 +8,7 @@ cortex-m.workspace = true
 cortex-m-rt.workspace = true
 critical-section.workspace = true
 critical-section-lock-mut.workspace = true
-embedded-hal.workspace = true
+heapless = "0.9.2"
 microbit-v2.workspace = true
 panic-rtt-target.workspace = true
 rtt-target.workspace = true
