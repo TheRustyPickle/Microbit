@@ -1,6 +1,8 @@
 [workspace]
 members = [
   "arrow",
+  "driver-check", "driver-magno",
+  "driver-temp",
   "roulette",
   "serial-setup",
   "siren",

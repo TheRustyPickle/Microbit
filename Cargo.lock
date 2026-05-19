@@ -121,6 +121,42 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
+name = "driver-check"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "critical-section",
+ "critical-section-lock-mut",
+ "driver-temp",
+ "microbit-v2",
+ "panic-rtt-target",
+ "rtt-target",
+]
+
+[[package]]
+name = "driver-magno"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "nrf52833-pac",
+ "panic-rtt-target",
+ "rtt-target",
+]
+
+[[package]]
+name = "driver-temp"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "nrf52833-pac",
+ "panic-rtt-target",
+ "rtt-target",
+]
+
+[[package]]
 name = "embedded-dma"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
