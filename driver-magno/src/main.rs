@@ -2,7 +2,7 @@
 #![no_std]
 
 use core::ptr;
-use cortex_m::asm::wfi;
+use cortex_m::asm::{nop, wfi};
 use cortex_m_rt::entry;
 use nrf52833_pac::{self as _};
 use panic_rtt_target as _;
@@ -25,7 +25,7 @@ const GPIO0: usize = 0x50000000;
 const P8: *mut u32 = (0x720 + GPIO0) as *mut u32;
 const P16: *mut u32 = (0x740 + GPIO0) as *mut u32;
 
-const WHO_AM_I_M: usize = 0x4F;
+const WHO_AM_I_M: u8 = 0x4F;
 
 const RXD_PTR: *mut u32 = (0x534 + TWIM0) as *mut u32;
 const TXD_PTR: *mut u32 = (0x544 + TWIM0) as *mut u32;
@@ -34,7 +34,6 @@ const RXD_MAXCNT: *mut u32 = (0x538 + TWIM0) as *mut u32;
 const TXD_MAXCNT: *mut u32 = (0x548 + TWIM0) as *mut u32;
 
 const TASKS_STARTTX: *mut u32 = (0x008 + TWIM0) as *mut u32;
-const TASKS_STARTRX: *mut u32 = (0x000 + TWIM0) as *mut u32;
 
 const EVENTS_LASTTX: *mut u32 = (0x11C + TWIM0) as *mut u32;
 const EVENTS_LASTRX: *mut u32 = (0x15C + TWIM0) as *mut u32;
@@ -45,6 +44,8 @@ const EVENTS_ERROR: *mut u32 = (0x124 + TWIM0) as *mut u32;
 const ERROR_SRC: *mut u32 = (0x4C4 + TWIM0) as *mut u32;
 
 const EVENTS_STOPPED: *mut u32 = (0x104 + TWIM0) as *mut u32;
+
+const MAGNO_CONF: u8 = 0x60;
 
 #[derive(Default)]
 pub struct MagnoSensor {}
@@ -94,38 +95,15 @@ impl MagnoSensor {
             }
         }
 
+        if let Err(e) = sensor.set_default_magno() {
+            panic!("Error: 0x{:X}", e);
+        };
+
         sensor
     }
 
     fn verify_who_am_i(&self) -> Result<u8, u32> {
-        let shorts_value: u32 = (1 << 7) | (1 << 12);
-
-        let tx_buf = [WHO_AM_I_M];
-        let mut rx_buf = [0u8; 1];
-
-        unsafe {
-            ptr::write_volatile(TXD_PTR, tx_buf.as_ptr() as u32);
-            ptr::write_volatile(RXD_PTR, rx_buf.as_mut_ptr() as u32);
-
-            ptr::write_volatile(TXD_MAXCNT, 1);
-            ptr::write_volatile(RXD_MAXCNT, 1);
-
-            ptr::write_volatile(SHORTS, shorts_value);
-            ptr::write_volatile(TASKS_STARTTX, 1);
-        }
-        loop {
-            let current_value = unsafe { ptr::read_volatile(EVENTS_STOPPED) };
-
-            if current_value == 1 {
-                break;
-            }
-
-            if let Some(error) = self.check_errors() {
-                return Err(error);
-            };
-        }
-
-        Ok(rx_buf[0])
+        self.twim_read_write(WHO_AM_I_M, None)
     }
 
     fn check_errors(&self) -> Option<u32> {
@@ -148,6 +126,92 @@ impl MagnoSensor {
         None
     }
 
+    fn get_magno_value(&self) -> Result<u8, u32> {
+        loop {
+            let status = self.twim_read_write(0x67, None)?;
+
+            if (status & 0x08) != 0 {
+                break;
+            }
+        }
+        let value1 = self.twim_read_write(0x68, None)?;
+        let value2 = self.twim_read_write(0x69, None)?;
+        let value3 = self.twim_read_write(0x6A, None)?;
+        let value4 = self.twim_read_write(0x6B, None)?;
+        let value5 = self.twim_read_write(0x6C, None)?;
+        let value6 = self.twim_read_write(0x6D, None)?;
+
+        rprintln!(
+            "Magno value: 0x{:X} 0x{:X} 0x{:X} 0x{:X} 0x{:X} 0x{:X}",
+            value1,
+            value2,
+            value3,
+            value4,
+            value5,
+            value6
+        );
+
+        Ok(0)
+    }
+
+    fn set_default_magno(&self) -> Result<(), u32> {
+        let low_power = 0;
+
+        // 100 hz
+        let odr0 = 1;
+        let odr1 = 1;
+
+        // Continuous
+        let md_value = 0;
+
+        let magno_value = md_value | (md_value << 1) | (odr0 << 2) | (odr1 << 3) | (low_power << 4);
+
+        self.twim_read_write(MAGNO_CONF, Some(magno_value))
+            .map(|_| ())
+    }
+
+    fn twim_read_write(&self, address: u8, write_value: Option<u8>) -> Result<u8, u32> {
+        self.clear_events();
+
+        let mut tx_buf = [0u8; 2];
+        tx_buf[0] = address;
+
+        let tx_len: u32;
+        let rx_len: u32;
+        let mut shorts_value = (1 << 7) | (1 << 12);
+
+        if let Some(val) = write_value {
+            tx_buf[1] = val;
+            tx_len = 2;
+            rx_len = 0;
+            shorts_value = 1 << 9;
+        } else {
+            tx_len = 1;
+            rx_len = 1;
+        }
+
+        let mut rx_buf = [0u8; 1];
+
+        unsafe {
+            ptr::write_volatile(TXD_PTR, tx_buf.as_ptr() as u32);
+            ptr::write_volatile(RXD_PTR, rx_buf.as_mut_ptr() as u32);
+
+            ptr::write_volatile(TXD_MAXCNT, tx_len);
+            ptr::write_volatile(RXD_MAXCNT, rx_len);
+
+            ptr::write_volatile(SHORTS, shorts_value);
+            ptr::write_volatile(TASKS_STARTTX, 1);
+        }
+
+        self.loop_until_stop()?;
+
+        if write_value.is_none() {
+            Ok(rx_buf[0])
+        } else {
+            Ok(0)
+        }
+    }
+
     fn clear_events(&self) {
         unsafe {
             ptr::write_volatile(EVENTS_LASTTX, 0);
@@ -158,13 +222,43 @@ impl MagnoSensor {
             ptr::write_volatile(ERROR_SRC, 0);
         }
     }
+
+    fn loop_until_stop(&self) -> Result<(), u32> {
+        loop {
+            let current_value = unsafe { ptr::read_volatile(EVENTS_STOPPED) };
+
+            if current_value == 1 {
+                break;
+            }
+
+            if let Some(error) = self.check_errors() {
+                return Err(error);
+            };
+        }
+
+        Ok(())
+    }
 }
 
 #[entry]
 fn main() -> ! {
     rtt_init_print!();
 
-    let _ = MagnoSensor::new();
+    let sensor = MagnoSensor::new();
+
+    let _ = sensor.get_magno_value();
+    for _ in 0..1000 {
+        nop();
+    }
+    let _ = sensor.get_magno_value();
+    for _ in 0..1000 {
+        nop();
+    }
+    let _ = sensor.get_magno_value();
+    for _ in 0..1000 {
+        nop();
+    }
+    let _ = sensor.get_magno_value();
     rprintln!("Magno sensor initialized");
     loop {
         wfi()
