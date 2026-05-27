@@ -47,6 +47,17 @@ const EVENTS_STOPPED: *mut u32 = (0x104 + TWIM0) as *mut u32;
 
 const MAGNO_CONF: u8 = 0x60;
 
+const AUTO_INCREMENT: u8 = 0x80;
+const MAGNO_X_L: u8 = 0x68;
+
+const SENSITIVITY: i16 = 150;
+
+pub struct MagnoAxis {
+    x: i16,
+    y: i16,
+    z: i16,
+}
+
 #[derive(Default)]
 pub struct MagnoSensor {}
 
@@ -103,7 +114,9 @@ impl MagnoSensor {
     }
 
     fn verify_who_am_i(&self) -> Result<u8, u32> {
-        self.twim_read_write(WHO_AM_I_M, None)
+        let mut value = [0; 1];
+        self.twim_read_write(WHO_AM_I_M, None, &mut value)?;
+        Ok(value[0])
     }
 
     fn check_errors(&self) -> Option<u32> {
@@ -126,32 +139,38 @@ impl MagnoSensor {
         None
     }
 
-    fn get_magno_value(&self) -> Result<u8, u32> {
+    fn get_magno_value(&self) -> Result<MagnoAxis, u32> {
         loop {
-            let status = self.twim_read_write(0x67, None)?;
+            let mut status = [0; 1];
+            self.twim_read_write(0x67, None, &mut status)?;
 
-            if (status & 0x08) != 0 {
+            if (status[0] & 0x08) != 0 {
                 break;
             }
         }
-        let value1 = self.twim_read_write(0x68, None)?;
-        let value2 = self.twim_read_write(0x69, None)?;
-        let value3 = self.twim_read_write(0x6A, None)?;
-        let value4 = self.twim_read_write(0x6B, None)?;
-        let value5 = self.twim_read_write(0x6C, None)?;
-        let value6 = self.twim_read_write(0x6D, None)?;
+
+        // Auto read 6 registers at once
+        let mut value_buf = [0; 6];
+        self.twim_read_write(MAGNO_X_L | AUTO_INCREMENT, None, &mut value_buf)?;
+
+        let x_value = i16::from_le_bytes([value_buf[0], value_buf[1]]) * SENSITIVITY;
+        let y_value = i16::from_le_bytes([value_buf[2], value_buf[3]]) * SENSITIVITY;
+        let z_value = i16::from_le_bytes([value_buf[4], value_buf[5]]) * SENSITIVITY;
 
         rprintln!(
-            "Magno value: 0x{:X} 0x{:X} 0x{:X} 0x{:X} 0x{:X} 0x{:X}",
-            value1,
-            value2,
-            value3,
-            value4,
-            value5,
-            value6
+            "Magno values: X: {}, Y: {}, Z: {}",
+            x_value,
+            y_value,
+            z_value
         );
 
-        Ok(0)
+        let axis = MagnoAxis {
+            x: x_value,
+            y: y_value,
+            z: z_value,
+        };
+
+        Ok(axis)
     }
 
     fn set_default_magno(&self) -> Result<(), u32> {
@@ -166,31 +185,33 @@ impl MagnoSensor {
 
         let magno_value = md_value | (md_value << 1) | (odr0 << 2) | (odr1 << 3) | (low_power << 4);
 
-        self.twim_read_write(MAGNO_CONF, Some(magno_value))
+        self.twim_read_write(MAGNO_CONF, Some(magno_value), &mut [0; 0])
             .map(|_| ())
     }
 
-    fn twim_read_write(&self, address: u8, write_value: Option<u8>) -> Result<u8, u32> {
+    fn twim_read_write(
+        &self,
+        address: u8,
+        write_value: Option<u8>,
+        rx_buf: &mut [u8],
+    ) -> Result<(), u32> {
         self.clear_events();
 
         let mut tx_buf = [0u8; 2];
         tx_buf[0] = address;
 
         let tx_len: u32;
-        let rx_len: u32;
+        let rx_len = rx_buf.len() as u32;
+
         let mut shorts_value = (1 << 7) | (1 << 12);
 
         if let Some(val) = write_value {
             tx_buf[1] = val;
             tx_len = 2;
-            rx_len = 0;
             shorts_value = 1 << 9;
         } else {
             tx_len = 1;
-            rx_len = 1;
         }
-
-        let mut rx_buf = [0u8; 1];
 
         unsafe {
             ptr::write_volatile(TXD_PTR, tx_buf.as_ptr() as u32);
@@ -205,11 +226,7 @@ impl MagnoSensor {
 
         self.loop_until_stop()?;
 
-        if write_value.is_none() {
-            Ok(rx_buf[0])
-        } else {
-            Ok(0)
-        }
+        Ok(())
     }
 
     fn clear_events(&self) {
@@ -246,21 +263,11 @@ fn main() -> ! {
 
     let sensor = MagnoSensor::new();
 
-    let _ = sensor.get_magno_value();
-    for _ in 0..1000 {
-        nop();
-    }
-    let _ = sensor.get_magno_value();
-    for _ in 0..1000 {
-        nop();
-    }
-    let _ = sensor.get_magno_value();
-    for _ in 0..1000 {
-        nop();
-    }
-    let _ = sensor.get_magno_value();
     rprintln!("Magno sensor initialized");
     loop {
-        wfi()
+        let _ = sensor.get_magno_value();
+        for _ in 0..1000 {
+            nop();
+        }
     }
 }
