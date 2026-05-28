@@ -2,11 +2,15 @@
 #![no_std]
 
 use core::ptr;
-use cortex_m::asm::{nop, wfi};
-use cortex_m_rt::entry;
+use cortex_m::asm::wfi;
+use cortex_m_rt::{self, entry};
+use critical_section_lock_mut::LockMut;
+use microbit::hal::pac::interrupt;
 use nrf52833_pac::{self as _};
 use panic_rtt_target as _;
 use rtt_target::{rprintln, rtt_init_print};
+
+static SENSOR: LockMut<MagnoSensor> = LockMut::new();
 
 const TWIM0: usize = 0x40003000;
 
@@ -24,6 +28,7 @@ const MAGNO_SLAVE_ADDRESS: u32 = 0x1E;
 const GPIO0: usize = 0x50000000;
 const P8: *mut u32 = (0x720 + GPIO0) as *mut u32;
 const P16: *mut u32 = (0x740 + GPIO0) as *mut u32;
+const P25: *mut u32 = (0x764 + GPIO0) as *mut u32;
 
 const WHO_AM_I_M: u8 = 0x4F;
 
@@ -45,17 +50,26 @@ const ERROR_SRC: *mut u32 = (0x4C4 + TWIM0) as *mut u32;
 
 const EVENTS_STOPPED: *mut u32 = (0x104 + TWIM0) as *mut u32;
 
-const MAGNO_CONF: u8 = 0x60;
+const MAGNO_CONF_A: u8 = 0x60;
+const MAGNO_CONF_C: u8 = 0x63;
 
 const AUTO_INCREMENT: u8 = 0x80;
 const MAGNO_X_L: u8 = 0x68;
 
 const SENSITIVITY: i16 = 150;
 
+const GPIOTE_BASE: usize = 0x40006000;
+const GPIOTE_CONFIG0: *mut u32 = (0x510 + GPIOTE_BASE) as *mut u32;
+const GPIOTE_INTERRUPT: *mut u32 = (0x304 + GPIOTE_BASE) as *mut u32;
+
+const GPIOTE_IN0: *mut u32 = (0x100 + GPIOTE_BASE) as *mut u32;
+
+const LATCH: *mut u32 = (0x520 + TWIM0) as *mut u32;
+
 pub struct MagnoAxis {
-    x: i16,
-    y: i16,
-    z: i16,
+    pub x: i16,
+    pub y: i16,
+    pub z: i16,
 }
 
 #[derive(Default)]
@@ -139,7 +153,7 @@ impl MagnoSensor {
         None
     }
 
-    fn get_magno_value(&self) -> Result<MagnoAxis, u32> {
+    pub fn get_magno_value_blocking(&self) -> Result<MagnoAxis, u32> {
         loop {
             let mut status = [0; 1];
             self.twim_read_write(0x67, None, &mut status)?;
@@ -149,6 +163,10 @@ impl MagnoSensor {
             }
         }
 
+        self.get_magno_value_no_check()
+    }
+
+    pub fn get_magno_value_no_check(&self) -> Result<MagnoAxis, u32> {
         // Auto read 6 registers at once
         let mut value_buf = [0; 6];
         self.twim_read_write(MAGNO_X_L | AUTO_INCREMENT, None, &mut value_buf)?;
@@ -185,7 +203,7 @@ impl MagnoSensor {
 
         let magno_value = md_value | (md_value << 1) | (odr0 << 2) | (odr1 << 3) | (low_power << 4);
 
-        self.twim_read_write(MAGNO_CONF, Some(magno_value), &mut [0; 0])
+        self.twim_read_write(MAGNO_CONF_A, Some(magno_value), &mut [0; 0])
             .map(|_| ())
     }
 
@@ -237,6 +255,8 @@ impl MagnoSensor {
 
             ptr::write_volatile(EVENTS_ERROR, 0);
             ptr::write_volatile(ERROR_SRC, 0);
+
+            ptr::write_volatile(GPIOTE_IN0, 0);
         }
     }
 
@@ -255,6 +275,70 @@ impl MagnoSensor {
 
         Ok(())
     }
+
+    pub fn enable_interrupt_continuous(&self) -> Result<(), u32> {
+        // 0 = INT_MAG = DRDY
+        // 4 = BDU = Corruption block
+        let value = (1 << 0) | (1 << 4);
+
+        self.twim_read_write(MAGNO_CONF_C, Some(value), &mut [0; 0])?;
+
+        // 0 = input pin
+        // 0 = input connect
+        // 3 = pull up
+        // 3 = Sense low level
+        let value = (3 << 2) | (3 << 16);
+
+        unsafe {
+            ptr::write_volatile(P25, value);
+        }
+
+        // 1 = event mode
+        // 25 = pin 25
+        // 0 = port 0
+        // 1 = Low to high
+        let value = (1 << 0) | (25 << 8) | (1 << 16);
+
+        unsafe {
+            ptr::write_volatile(GPIOTE_CONFIG0, value);
+        }
+
+        // 0 = interrupt on IN0
+        // 1 = Enable event PORT interrupt
+        let value = (1 << 0) | (1 << 31);
+
+        // Enable interrupt on IN0
+        unsafe {
+            ptr::write_volatile(GPIOTE_INTERRUPT, value);
+        }
+
+        Ok(())
+    }
+
+    pub fn acknowledge_interrupt(&self) {
+        unsafe {
+            ptr::write_volatile(GPIOTE_IN0, 0);
+
+            let value = 1 << 25;
+
+            ptr::write_volatile(LATCH, value);
+        }
+    }
+}
+
+#[interrupt]
+fn GPIOTE() {
+    SENSOR.with_lock(|s| {
+        let values = s.get_magno_value_no_check().unwrap();
+        rprintln!(
+            "Magno values: X: {}, Y: {}, Z: {}",
+            values.x,
+            values.y,
+            values.z
+        );
+
+        s.acknowledge_interrupt();
+    });
 }
 
 #[entry]
@@ -264,10 +348,16 @@ fn main() -> ! {
     let sensor = MagnoSensor::new();
 
     rprintln!("Magno sensor initialized");
+    let _ = sensor.enable_interrupt_continuous();
+    let _ = sensor.get_magno_value_blocking();
+
+    SENSOR.init(sensor);
+
+    unsafe {
+        cortex_m::peripheral::NVIC::unmask(nrf52833_pac::Interrupt::GPIOTE);
+    }
+
     loop {
-        let _ = sensor.get_magno_value();
-        for _ in 0..1000 {
-            nop();
-        }
+        wfi();
     }
 }
