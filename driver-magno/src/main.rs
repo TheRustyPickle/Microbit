@@ -62,10 +62,6 @@ const GPIOTE_BASE: usize = 0x40006000;
 const GPIOTE_CONFIG0: *mut u32 = (0x510 + GPIOTE_BASE) as *mut u32;
 const GPIOTE_INTERRUPT: *mut u32 = (0x304 + GPIOTE_BASE) as *mut u32;
 
-const GPIOTE_IN0: *mut u32 = (0x100 + GPIOTE_BASE) as *mut u32;
-
-const LATCH: *mut u32 = (0x520 + TWIM0) as *mut u32;
-
 pub struct MagnoAxis {
     pub x: i16,
     pub y: i16,
@@ -87,6 +83,29 @@ impl MagnoSensor {
         let pin_cnf_value = (3 << 2) | (6 << 8);
 
         unsafe {
+            // In case it gets blocked, reset status. Unsure what it does completely.
+            {
+                ptr::write_volatile(P8, 1);
+                // Set SDA (P16) as an Input (0 << 0) with a Pull-Up (3 << 2) so we can monitor it
+                ptr::write_volatile(P16, 3 << 2);
+
+                // Clock SCL manually up to 9 times to force the sensor to release SDA
+                for _ in 0..9 {
+                    // If SDA has sprung back to 1 (High), the bus is clear, we can stop!
+                    if (ptr::read_volatile(GPIOTE_CONFIG0) & (1 << sda_pin)) != 0 {
+                        break;
+                    }
+
+                    // Clear SCL to 0 (Low) using OUTCLR register offset 0x50C
+                    ptr::write_volatile(PSEL_SDA, 1 << scl_pin);
+                    cortex_m::asm::delay(100); // Give it a microscopic pause
+
+                    // Set SCL to 1 (High) using OUTSET register offset 0x508
+                    ptr::write_volatile(PSEL_SCL, 1 << scl_pin);
+                    cortex_m::asm::delay(100);
+                }
+            }
+
             ptr::write_volatile(EVENTS_LASTTX, 0);
             ptr::write_volatile(EVENTS_LASTRX, 0);
             ptr::write_volatile(EVENTS_STOPPED, 0);
@@ -255,8 +274,6 @@ impl MagnoSensor {
 
             ptr::write_volatile(EVENTS_ERROR, 0);
             ptr::write_volatile(ERROR_SRC, 0);
-
-            ptr::write_volatile(GPIOTE_IN0, 0);
         }
     }
 
@@ -314,16 +331,6 @@ impl MagnoSensor {
 
         Ok(())
     }
-
-    pub fn acknowledge_interrupt(&self) {
-        unsafe {
-            ptr::write_volatile(GPIOTE_IN0, 0);
-
-            let value = 1 << 25;
-
-            ptr::write_volatile(LATCH, value);
-        }
-    }
 }
 
 #[interrupt]
@@ -336,8 +343,6 @@ fn GPIOTE() {
             values.y,
             values.z
         );
-
-        s.acknowledge_interrupt();
     });
 }
 
