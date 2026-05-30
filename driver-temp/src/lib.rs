@@ -4,7 +4,6 @@
 use core::ptr;
 use cortex_m::asm::nop;
 use nrf52833_pac::{self as _, TEMP};
-use panic_rtt_target as _;
 
 pub struct TemperatureSensorRaw {
     tasks_start: *mut u32,

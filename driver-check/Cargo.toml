@@ -8,7 +8,8 @@ cortex-m.workspace = true
 cortex-m-rt.workspace = true
 critical-section.workspace = true
 critical-section-lock-mut.workspace = true
+driver-magno = { path = "../driver-magno" }
+driver-temp = { path = "../driver-temp" }
 microbit-v2.workspace = true
 panic-rtt-target.workspace = true
 rtt-target.workspace = true
-driver-temp = { path = "../driver-temp" }

@@ -2,11 +2,6 @@
 #![no_std]
 
 use core::ptr;
-use cortex_m::asm::wfi;
-use cortex_m_rt::{self, entry};
-use nrf52833_pac::{self as _};
-use panic_rtt_target as _;
-use rtt_target::{rprintln, rtt_init_print};
 
 const TWIM0: usize = 0x40003000;
 
@@ -54,8 +49,8 @@ const SENSITIVITY: i32 = 150;
 
 const GPIOTE_BASE: usize = 0x40006000;
 const GPIOTE_CONFIG0: *mut u32 = (0x510 + GPIOTE_BASE) as *mut u32;
-const GPIOTE_EVENTS0: *mut u32 = (0x100 + GPIOTE_BASE) as *mut u32;
 
+#[derive(Default)]
 pub struct MagnoAxis {
     pub x: i32,
     pub y: i32,
@@ -99,10 +94,6 @@ impl MagnoSensor {
                     cortex_m::asm::delay(100);
                 }
             }
-
-            ptr::write_volatile(EVENTS_LASTTX, 0);
-            ptr::write_volatile(EVENTS_LASTRX, 0);
-            ptr::write_volatile(EVENTS_STOPPED, 0);
 
             ptr::write_volatile(P8, pin_cnf_value);
             ptr::write_volatile(P16, pin_cnf_value);
@@ -187,13 +178,6 @@ impl MagnoSensor {
         let x_value = i16::from_le_bytes([value_buf[0], value_buf[1]]) as i32 * SENSITIVITY;
         let y_value = i16::from_le_bytes([value_buf[2], value_buf[3]]) as i32 * SENSITIVITY;
         let z_value = i16::from_le_bytes([value_buf[4], value_buf[5]]) as i32 * SENSITIVITY;
-
-        rprintln!(
-            "Magno values: X: {}, Y: {}, Z: {}",
-            x_value,
-            y_value,
-            z_value
-        );
 
         let axis = MagnoAxis {
             x: x_value,
@@ -287,22 +271,5 @@ impl MagnoSensor {
         }
 
         Ok(())
-    }
-}
-
-#[entry]
-fn main() -> ! {
-    rtt_init_print!();
-
-    let sensor = MagnoSensor::new();
-
-    unsafe {
-        ptr::write_volatile(GPIOTE_EVENTS0, 0);
-    }
-    rprintln!("Magno sensor initialized");
-    let _ = sensor.get_magno_value_blocking();
-
-    loop {
-        wfi();
     }
 }

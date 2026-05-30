@@ -128,6 +128,7 @@ dependencies = [
  "cortex-m-rt",
  "critical-section",
  "critical-section-lock-mut",
+ "driver-magno",
  "driver-temp",
  "microbit-v2",
  "panic-rtt-target",
@@ -141,8 +142,6 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "nrf52833-pac",
- "panic-rtt-target",
- "rtt-target",
 ]
 
 [[package]]
@@ -152,8 +151,6 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "nrf52833-pac",
- "panic-rtt-target",
- "rtt-target",
 ]
 
 [[package]]
