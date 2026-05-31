@@ -1,5 +1,10 @@
 use core::ptr;
 
+use crate::{
+    AUTO_INCREMENT, MAGNO_CONF_A, MAGNO_SLAVE_ADDRESS, MAGNO_X_L, MagnoAxis, SENSITIVITY,
+    WHO_AM_I_M,
+};
+
 const TWIM0: usize = 0x40003000;
 
 const PSEL_SCL: *mut u32 = (0x508 + TWIM0) as *mut u32;
@@ -11,13 +16,9 @@ const ENABLE: *mut u32 = (0x500 + TWIM0) as *mut u32;
 const FREQUENCY: *mut u32 = (0x524 + TWIM0) as *mut u32;
 const FREQUENCY_K100: u32 = 0x01980000;
 
-const MAGNO_SLAVE_ADDRESS: u32 = 0x1E;
-
 const GPIO0: usize = 0x50000000;
 const P8: *mut u32 = (0x720 + GPIO0) as *mut u32;
 const P16: *mut u32 = (0x740 + GPIO0) as *mut u32;
-
-const WHO_AM_I_M: u8 = 0x4F;
 
 const RXD_PTR: *mut u32 = (0x534 + TWIM0) as *mut u32;
 const TXD_PTR: *mut u32 = (0x544 + TWIM0) as *mut u32;
@@ -37,22 +38,8 @@ const ERROR_SRC: *mut u32 = (0x4C4 + TWIM0) as *mut u32;
 
 const EVENTS_STOPPED: *mut u32 = (0x104 + TWIM0) as *mut u32;
 
-const MAGNO_CONF_A: u8 = 0x60;
-
-const AUTO_INCREMENT: u8 = 0x80;
-const MAGNO_X_L: u8 = 0x68;
-
-const SENSITIVITY: i32 = 150;
-
 const GPIOTE_BASE: usize = 0x40006000;
 const GPIOTE_CONFIG0: *mut u32 = (0x510 + GPIOTE_BASE) as *mut u32;
-
-#[derive(Default)]
-pub struct MagnoAxis {
-    pub x: i32,
-    pub y: i32,
-    pub z: i32,
-}
 
 #[derive(Default)]
 pub struct MagnoSensor {}
@@ -100,7 +87,7 @@ impl MagnoSensor {
 
             ptr::write_volatile(FREQUENCY, FREQUENCY_K100);
 
-            ptr::write_volatile(ADDRESS, MAGNO_SLAVE_ADDRESS);
+            ptr::write_volatile(ADDRESS, MAGNO_SLAVE_ADDRESS as u32);
 
             ptr::write_volatile(ENABLE, 6);
         }
