@@ -1,7 +1,8 @@
 [workspace]
 members = [
   "arrow",
-  "driver-check", "driver-magno",
+  "driver-check",
+  "driver-magno",
   "driver-temp",
   "roulette",
   "serial-setup",
@@ -14,10 +15,13 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-cortex-m = { version = "0.7.7", features = [
-  "critical-section-single-core",
-  "inline-asm",
-] }
+cortex-m = {
+  version = "0.7.7",
+  features = [
+    "critical-section-single-core",
+    "inline-asm",
+  ]
+}
 cortex-m-rt = "0.7.5"
 critical-section = "1"
 critical-section-lock-mut = "0.1"

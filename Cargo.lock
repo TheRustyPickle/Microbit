@@ -140,8 +140,6 @@ name = "driver-magno"
 version = "0.1.0"
 dependencies = [
  "cortex-m",
- "cortex-m-rt",
- "nrf52833-pac",
 ]
 
 [[package]]

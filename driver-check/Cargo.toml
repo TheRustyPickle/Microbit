@@ -3,6 +3,11 @@ name = "driver-check"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+bench = false
+name = "driver-check"
+test = false
+
 [dependencies]
 cortex-m.workspace = true
 cortex-m-rt.workspace = true
